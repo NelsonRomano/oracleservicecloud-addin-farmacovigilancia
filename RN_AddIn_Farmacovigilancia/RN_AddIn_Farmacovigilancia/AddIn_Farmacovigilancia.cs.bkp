@@ -1,0 +1,762 @@
+using RightNow.AddIns.AddInViews;
+using System;
+using System.AddIn;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Xml;
+using WebServiceCall;
+
+namespace RN_AddIn_Farmacovigilancia {
+    public class WorkspaceRibbonAddIn : Panel, IWorkspaceRibbonButton {
+
+        private IRecordContext RecordContext {
+            get; set;
+        }
+
+        public WorkspaceRibbonAddIn(bool inDesignMode, IRecordContext RecordContext) {
+            this.RecordContext = RecordContext;
+        }
+
+        #region IWorkspaceRibbonButton Members
+        public new void Click() {
+            gravarArquivo();
+        }
+        #endregion
+
+        static string extrairValor(string xmlResposta) {
+            string valor = "";
+            XmlDocument document = new XmlDocument();
+            document.LoadXml(xmlResposta);
+            var namespaceManager = new XmlNamespaceManager(document.NameTable);
+            namespaceManager.AddNamespace("soapenv", "http://schemas.xmlsoap.org/soap/envelope/");
+            namespaceManager.AddNamespace("xsi", "http://www.w3.org/2001/XMLSchema-instance");
+            namespaceManager.AddNamespace("patriiicia", "urn:messages.ws.rightnow.com/v1_3");
+            valor = document.SelectSingleNode("//patriiicia:Row", namespaceManager).InnerText;
+            valor = Regex.Replace(valor, "^\"(.+?)\"$", "$1");
+            if(!valor.Equals("")) {
+                return valor;
+            }
+            else {
+                return "N/I";
+            }
+        }
+
+        static List<Dictionary<string, string>> extrairTabela(string xmlResposta) {
+            List<Dictionary<string, string>> listaConcomitante = new List<Dictionary<string, string>>();
+            XmlDocument document = new XmlDocument();
+            document.LoadXml(xmlResposta);
+            var namespaceManager = new XmlNamespaceManager(document.NameTable);
+            namespaceManager.AddNamespace("soapenv", "http://schemas.xmlsoap.org/soap/envelope/");
+            namespaceManager.AddNamespace("xsi", "http://www.w3.org/2001/XMLSchema-instance");
+            namespaceManager.AddNamespace("patriiicia", "urn:messages.ws.rightnow.com/v1_3");
+            XmlNodeList rowList = document.SelectNodes("//patriiicia:Row", namespaceManager);
+            foreach(XmlNode node in rowList) {
+                string row = node.InnerText;
+                string[] separator = { ";" };
+                string[] campos = row.Split(separator, StringSplitOptions.None);
+                for(int i = 0; i < campos.Length; i++) {
+                    campos[i] = Regex.Replace(campos[i], "^\"(.+?)\"$", "$1");
+                    if(campos[i] == null || campos[i].Equals("")) {
+                        campos[i] = "N/I";
+                    }
+                }
+                Dictionary<string, string> usoConcomitante = new Dictionary<string, string>();
+                usoConcomitante.Add("NomeConGen", campos[0]);
+                usoConcomitante.Add("DoseDiaria", campos[1]);
+                usoConcomitante.Add("ViaAdm", campos[2]);
+                usoConcomitante.Add("IndicUso", campos[3]);
+                usoConcomitante.Add("DataInic", campos[4]);
+                usoConcomitante.Add("DataFim", campos[5]);
+                usoConcomitante.Add("DataReintr", campos[6]);
+                listaConcomitante.Add(usoConcomitante);
+            }
+            return listaConcomitante;
+        }
+
+        static string gerarHtmlUsoConcomitante(List<Dictionary<string, string>> listaConcomitante) {
+            string html = "";
+            foreach(Dictionary<string, string> usoConcomitante in listaConcomitante) {
+                html += gerarLinhaConcomitante(usoConcomitante);
+            }
+            return html;
+        }
+
+        private static string gerarLinhaConcomitante(Dictionary<string, string> usoConcomitante) {
+            string linhaConcomitante =
+                "  <tr style=\"height:19.85pt\">" +
+                "    <td colspan=\"6\" style=\"width:169.2pt;border:solid #181717 1.0pt;border-top:none;padding:1.0pt 2.0pt 0cm 0cm;height:19.85pt\" width=\"226\" valign=\"bottom\"><p class=\"MsoNormal\"><span style=\"font-size:8.0pt;line-height:107%;color:#181717\">" + usoConcomitante["NomeConGen"] + "</span></p></td>" +
+                "    <td colspan=\"3\" style=\"width:50.75pt;border-top:none;border-left:none;border-bottom:solid #181717 1.0pt;border-right:solid #181717 1.0pt;padding:1.0pt 2.0pt 0cm 0cm;height:19.85pt\" width=\"68\" valign=\"bottom\"><p class=\"MsoNormal\"><span style=\"font-size:8.0pt;line-height:107%;color:#181717\">" + usoConcomitante["DoseDiaria"] + "</span></p></td>" +
+                "    <td colspan=\"4\" style=\"width:50.75pt;border-top:none;border-left:none;border-bottom:solid #181717 1.0pt;border-right:solid #181717 1.0pt;padding:1.0pt 2.0pt 0cm 0cm;height:19.85pt\" width=\"68\" valign=\"bottom\"><p class=\"MsoNormal\"><span style=\"font-size:8.0pt;line-height:107%;color:#181717\">" + usoConcomitante["ViaAdm"] + "</span></p></td>" +
+                "    <td colspan=\"4\" style=\"width:73.3pt;border-top:none;border-left:none;border-bottom:solid #181717 1.0pt;border-right:solid #181717 1.0pt;padding:1.0pt 2.0pt 0cm 0cm;height:19.85pt\" width=\"98\" valign=\"bottom\"><p class=\"MsoNormal\"><span style=\"font-size:8.0pt;line-height:107%;color:#181717\">" + usoConcomitante["IndicUso"] + "</span></p></td>" +
+                "    <td colspan=\"2\" style=\"width:64.85pt;border-top:none;border-left:none;border-bottom:solid #181717 1.0pt;border-right:solid #181717 1.0pt;padding:1.0pt 2.0pt 0cm 0cm;height:19.85pt\" width=\"86\" valign=\"bottom\"><p class=\"MsoNormal\" style=\"margin-bottom:0cm;margin-bottom:.0001pt;text-align:justify;text-justify:inter-ideograph\"><span style=\"font-size:8.0pt;line-height:107%;color:#181717\">" + usoConcomitante["DataInic"] + "</span></p></td>" +
+                "    <td colspan=\"4\" style=\"width:64.85pt;border-top:none;border-left:none;border-bottom:solid #181717 1.0pt;border-right:solid #181717 1.0pt;padding:1.0pt 2.0pt 0cm 0cm;height:19.85pt\" width=\"86\" valign=\"bottom\"><p class=\"MsoNormal\" style=\"margin-bottom:0cm;margin-bottom:.0001pt;text-align:justify;text-justify:inter-ideograph\"><span style=\"font-size:8.0pt;line-height:107%;color:#181717\">" + usoConcomitante["DataFim"] + "</span></p></td>" +
+                "    <td colspan=\"2\" style=\"width:64.55pt;border-top:none;border-left:none;border-bottom:solid #181717 1.0pt;border-right:solid #181717 1.0pt;padding:1.0pt 2.0pt 0cm 0cm;height:19.85pt\" width=\"86\" valign=\"bottom\"><p class=\"MsoNormal\" style=\"margin-bottom:0cm;margin-bottom:.0001pt;text-align:justify;text-justify:inter-ideograph\"><span style=\"font-size:8.0pt;line-height:107%;color:#181717\">" + usoConcomitante["DataReintr"] + "</span></p></td>" +
+                "  </tr>";
+            return linhaConcomitante;
+        }
+
+        public void gravarArquivo() {
+            IIncident inc = (IIncident) RecordContext.GetWorkspaceRecord(RightNow.AddIns.Common.WorkspaceRecordType.Incident);
+            IContact contato = (IContact) RecordContext.GetWorkspaceRecord(RightNow.AddIns.Common.WorkspaceRecordType.Contact);
+            string contatoPrimarioId = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT Incident.PrimaryContact.Contact.id FROM Incident WHERE Incident.Id = " + inc.ID));
+            string matriculaFuncionario = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.CO.PV.CustomFields.C.matricula_funcionario FROM Incident WHERE Incident.Id = " + inc.ID));
+            string setor = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.CO.PV.CustomFields.C.setor FROM Incident WHERE Incident.Id = " + inc.ID));
+            string telefoneComercial = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.CO.PV.phones.Number FROM Incident WHERE CustomFields.CO.PV.phones.phonetype = 0  AND Incident.Id = " + inc.ID));
+            string iniciaisPaciente = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.iniciais_paciente FROM Incident WHERE Incident.Id = " + inc.ID));
+            string dataNasc = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.CO.data_nasc_pacient FROM Incident WHERE Incident.Id = " + inc.ID));
+            string idade = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.idade_pacient FROM Incident WHERE Incident.Id = " + inc.ID));
+            string peso = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.peso_pacient FROM Incident WHERE Incident.id = " + inc.ID));
+            string altura = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.alt_pacient FROM Incident WHERE Incident.Id = " + inc.ID));
+            string sexo = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.sexo_pacient.name FROM incident WHERE incident.Id = " + inc.ID));
+            string gravidez = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.gravid_pacient.name FROM Incident WHERE Incident.Id = " + inc.ID));
+            string dataInicioEvento = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.data_inic_evento FROM Incident WHERE Incident.Id = " + inc.ID));
+            string dataFinalEvento = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.data_final_evento FROM Incident WHERE Incident.Id = " + inc.ID));
+            string consequencia = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.consequencia.name FROM Incident WHERE Incident.Id = " + inc.ID));
+            string descricaoEvento = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.desc_event FROM Incident WHERE Incident.Id = " + inc.ID));
+            string relacaoMedicamento = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.relacao_medicamento.name FROM Incident WHERE Incident.Id = " + inc.ID));
+            string evolucaoDoPaciente = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.evolucao_do_paciente.name FROM Incident WHERE Incident.Id = " + inc.ID));
+            string nomeMedicamentoSuspeito = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.CO.Produto.Name FROM Incident WHERE Incident.Id = " + inc.ID));
+            string lote = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.CO.Lote.NumeroLote FROM incident WHERE incident.Id = " + inc.ID));
+            string viaAdministracao = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.c.via_de_administracao FROM Incident WHERE Incident.Id = " + inc.ID));
+            string doseDiaria = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.dose_diaria FROM incident WHERE incident.Id = " + inc.ID));
+            string indicacaoDeUso = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.indicacao_de_uso FROM incident WHERE incident.Id = " + inc.ID));
+            string eventoCessouComInterrupcao = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.evento_cess_interrr.name FROM incident WHERE incident.Id = " + inc.ID));
+            string dataInicialTratamento = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.data_inic_trat FROM incident WHERE incident.Id = " + inc.ID));
+            string dataFinalTratamento = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.data_final_trat FROM incident WHERE incident.Id = " + inc.ID));
+            string duracaoTratamento = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.duracao_do_tratamento FROM incident WHERE incident.Id = " + inc.ID));
+            string houveReintroducao = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.houve_reintrod.name FROM incident WHERE incident.Id = " + inc.ID));
+
+            List<Dictionary<string, string>> usoConcomitanteLista = extrairTabela(RightnowWSSuperaTeste.realizarQueryTabela("SELECT U.NomeConGen, U.DoseDiaria, U.ViaAdm, U.IndicUso,"
+                + " U.DataInic, U.DataFim, U.DataReintr FROM CO.UsoConcomitante U WHERE U.Incidente = " + inc.ID));
+            string usoConcomitante = gerarHtmlUsoConcomitante(usoConcomitanteLista);
+
+            string dadosClinicosRelevantes = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.c.dados_relevantes FROM Incident WHERE Incident.Id = " + inc.ID));
+            string nomeContato = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT Contact.Name.First FROM Contact WHERE Contact.id = " + contatoPrimarioId));
+            string inscricaoProfissional = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.C.insc_prof FROM Contact WHERE Contact.id = " + contatoPrimarioId));
+            string ruaContato = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT Contact.Address.Street FROM Contact WHERE Contact.id = " + contatoPrimarioId));
+            string cidadeContato = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT Contact.Address.City FROM Contact WHERE Contact.id = " + contatoPrimarioId));
+            string cepContato = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT Contact.Address.PostalCode FROM Contact WHERE Contact.id = " + contatoPrimarioId));
+            string estadoContato = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT Contact.Address.StateOrProvince.Name FROM Contact WHERE Contact.id = " + contatoPrimarioId));
+            string telefoneResidencial = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT Contact.Phones.Number FROM Contact WHERE Contact.Phones.PhoneType = 4 AND Contact.id = " + contatoPrimarioId));
+            string celularContato = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT Contact.Phones.Number FROM Contact WHERE Contact.Phones.PhoneType = 1 AND Contact.id = " + contatoPrimarioId));
+            string emailContato = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT Contact.Emails.Address FROM Contact WHERE Contact.Emails.AddressType = 0 AND Contact.id = " + contatoPrimarioId));
+            string profissionalSaude = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.c.profis_saude.Name FROM Contact WHERE Contact.id = " + contatoPrimarioId));
+            string especialidade = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.c.espec FROM Contact WHERE Contact.id = " + contatoPrimarioId));
+            string informacoesComplementares = extrairValor(RightnowWSSuperaTeste.realizarQueryCampo("SELECT CustomFields.c.informacoes_complementares FROM Incident WHERE Incident.Id = " + inc.ID));
+
+            if(telefoneComercial.Length == 10) {
+                telefoneComercial = telefoneComercial.Substring(0, 2) + " " + telefoneComercial.Substring(2, 4) + "-" + telefoneComercial.Substring(6, 4);
+            }
+            if(telefoneComercial.Length == 11) {
+                telefoneComercial = telefoneComercial.Substring(0, 2) + " " + telefoneComercial.Substring(2, 5) + "-" + telefoneComercial.Substring(7, 4);
+            }
+
+            if(telefoneResidencial.Length == 10) {
+                telefoneResidencial = telefoneResidencial.Substring(0, 2) + " " + telefoneResidencial.Substring(2, 4) + "-" + telefoneResidencial.Substring(6, 4);
+            }
+            if(telefoneResidencial.Length == 11) {
+                telefoneResidencial = telefoneResidencial.Substring(0, 2) + " " + telefoneResidencial.Substring(2, 5) + "-" + telefoneResidencial.Substring(7, 4);
+            }
+
+            if(celularContato.Length == 10) {
+                celularContato = celularContato.Substring(0, 2) + " " + celularContato.Substring(2, 4) + "-" + celularContato.Substring(6, 4);
+            }
+            if(celularContato.Length == 11) {
+                celularContato = celularContato.Substring(0, 2) + " " + celularContato.Substring(2, 5) + "-" + celularContato.Substring(7, 4);
+            }
+
+            if(cepContato.Length == 8) {
+                cepContato = cepContato.Substring(0, 5) + "-" + cepContato.Substring(5, 3);
+            }
+
+            informacoesComplementares = informacoesComplementares.ToUpper();
+
+            if(!dataNasc.Equals("") || !dataNasc.Equals("N/I")) {
+                DateTime dateTime = DateTime.ParseExact(dataNasc, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+                dataNasc = dateTime.ToString("dd/MM/yyyy");
+            }
+
+            string html1 = "<!DOCTYPE html>"
+                + "<html>"
+                + "<head>"
+                + "<title>Farmacovigilância</title>"
+                + "<meta content=\"text/html; charset=utf-8\" http-equiv=\"Content-Type\" />"
+                + "<meta name=\"Generator\" content=\"Microsoft Word 15 (filtered)\" />"
+                + "<style type=\"text/css\" xml:space=\"preserve\">"
+                + "@font-face {font-family: Cambria Math;}"
+                + "@font-face {font-family: Calibri;}"
+                + "@font-face {font-family: Century Gothic;}"
+                + "@font-face {font-family: Webdings;}"
+                + "@page WordSection1 {size: 595.3pt 841.9pt; margin: 34.35pt 90.6pt 15.85pt 103.2pt;}"
+                + "P.MsoNormal {FONT-SIZE: 11pt; FONT-FAMILY: \"Calibri\",sans-serif; COLOR: black; MARGIN: 0cm 0cm 8pt; LINE-HEIGHT: 107%}"
+                + "LI.MsoNormal {FONT-SIZE: 11pt; FONT-FAMILY: \"Calibri\",sans-serif; COLOR: black; MARGIN: 0cm 0cm 8pt; LINE-HEIGHT: 107%}"
+                + "DIV.MsoNormal {FONT-SIZE: 11pt; FONT-FAMILY: \"Calibri\",sans-serif; COLOR: black; MARGIN: 0cm 0cm 8pt; LINE-HEIGHT: 107%}"
+                + "H1 {FONT-SIZE: 7pt; FONT-FAMILY: \"Calibri\",sans-serif; PAGE-BREAK-AFTER: avoid; FONT-WEIGHT: normal; COLOR: #181717; TEXT-ALIGN: center; MARGIN: 0cm 12.6pt 0pt 0cm; LINE-HEIGHT: 107%; mso-style-link: \"Título 1 Char\"}"
+                + "SPAN.Ttulo1Char {FONT-FAMILY: \"Calibri\",sans-serif; COLOR: #181717; mso-style-link: \"Título 1\"; mso-style-name: \"Título 1 Char\"}"
+                + ".MsoPapDefault {MARGIN-BOTTOM: 8pt; LINE-HEIGHT: 107%}"
+                + "DIV.WordSection1 {page: WordSection1}"
+                + "</style>"
+                + "</head>"
+                + "<body lang=\"PT-BR\" xml:lang=\"PT-BR\">"
+                + "<div class=\"WordSection1\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt; MARGIN-RIGHT: 85pt\" align=\"center\"><span style='FONT-FAMILY: \"Century Gothic\",sans-serif; COLOR: #181717'><img border=\"0\" alt=\"Image\" src=\"https://superarx.custhelp.com/euf/assets/images/Logo.png\" /><strong>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160; SISTEMA DE FARMACOVIGILÂNCIA</strong></span></p>"
+                + "<p class=\"MsoNormal\" style=\"TEXT-ALIGN: center; MARGIN: 0cm 0cm 0pt 106.2pt; TEXT-INDENT: 35.4pt\" align=\"center\"><b><span style='FONT-FAMILY: \"Century Gothic\",sans-serif; COLOR: #181717'>NOTIFICAÇÃO EVENTO ADVERSO A MEDICAMENTO</span></b></p>"
+                + "<div align=\"center\">"
+                + "<table class=\"TableGrid\" style=\"WIDTH: 538.3pt; BORDER-COLLAPSE: collapse\" cellspacing=\"0\" cellpadding=\"0\" width=\"718\" border=\"0\">"
+                + "<tbody>"
+                + "<tr style=\"HEIGHT: 14.5pt\">"
+                + "<td style=\"BORDER-TOP: #181717 1pt solid; HEIGHT: 14.5pt; BORDER-RIGHT: medium none; WIDTH: 151.75pt; BACKGROUND: #bfbfbf; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"202\" colspan=\"5\">"
+                + "<p class=\"MsoNormal\" style=\"TEXT-ALIGN: right; MARGIN: 0cm 2.1pt 0pt 0cm\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">SAC SUPERA:</span></b></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: #181717 1pt solid; HEIGHT: 14.5pt; BORDER-RIGHT: #181717 2.25pt solid; WIDTH: 151.75pt; BACKGROUND: #bfbfbf; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"202\" colspan=\"11\">"
+                + "<p class=\"MsoNormal\" style=\"TEXT-ALIGN: justify; TEXT-JUSTIFY: inter-ideograph; MARGIN: 0cm 0cm 0pt -2pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">0800-708 18 18&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</span></b></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: #181717 2.25pt solid; HEIGHT: 14.5pt; BORDER-RIGHT: #181717 2.25pt solid; WIDTH: 234.8pt; BACKGROUND: #181717; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"313\" colspan=\"9\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 0cm 0pt -2.05pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">&#160;&#160;&#160;&#160;&#160;&#160;</span></b> <b><span style=\"FONT-SIZE: 8pt; COLOR: #fffefd; LINE-HEIGHT: 107%\">Preenchimento Exclusivo pelo depto. de Farmacovigilância</span></b></p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 19.85pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: medium none; WIDTH: 151.75pt; BACKGROUND: #fffefd; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" width=\"202\" colspan=\"5\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 0cm 0pt 4.25pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">PV Colaborador: " + matriculaFuncionario + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 2.25pt solid; WIDTH: 151.75pt; BACKGROUND: #fffefd; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"202\" colspan=\"11\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 135.35pt; BORDER-BOTTOM: #181717 2.25pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" rowspan=\"2\" width=\"180\" colspan=\"5\">"
+                + "<p class=\"MsoNormal\" style=\"TEXT-ALIGN: center; MARGIN: 0cm 0cm 0pt 2.05pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Código relato</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 2.25pt solid; WIDTH: 99.45pt; BORDER-BOTTOM: #181717 2.25pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" rowspan=\"2\" width=\"133\" colspan=\"4\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 0cm 14.65pt 4.25pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Data de recebimento do relato</span></p>"
+                + "<p class=\"MsoNormal\" style=\"TEXT-ALIGN: center; MARGIN: 0cm 0cm 0pt 2.05pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">____/____/____</span></p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 19.85pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 151.75pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" width=\"202\" colspan=\"5\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 0cm 0pt 4.25pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Setor: " + setor + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 2.25pt solid; WIDTH: 151.75pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" width=\"202\" colspan=\"11\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 0cm 0pt 4.25pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Tel.: " + telefoneComercial + "</span></p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 14.15pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 14.15pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 538.3pt; BACKGROUND: #bfbfbf; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"718\" colspan=\"25\">"
+                + "<p class=\"MsoNormal\" style=\"TEXT-ALIGN: center; MARGIN: 0cm 0.15pt 0pt 0cm\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">I. INFORMAÇÕES SOBRE O EVENTO ADVERSO</span></b></p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 14.1pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 14.1pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 538.3pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"718\" colspan=\"25\">"
+                + "<p class=\"MsoNormal\" style=\"TEXT-ALIGN: center; MARGIN: 0cm 0.15pt 0pt 0cm\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">FORMULÁRIO MODELO CIOMS</span></b></p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 1cm\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 1cm; BORDER-RIGHT: #181717 1pt solid; WIDTH: 63.6pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" rowspan=\"2\" width=\"85\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">1.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">PACIENTE</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">(iniciais)</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">" + iniciaisPaciente + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 1cm; BORDER-RIGHT: #181717 1pt solid; WIDTH: 68.9pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" rowspan=\"2\" width=\"92\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">2.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">DATA DE NASC.</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">" + dataNasc + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 1cm; BORDER-RIGHT: #181717 1pt solid; WIDTH: 39.4pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" rowspan=\"2\" width=\"53\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">3.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">IDADE</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">" + idade + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 1cm; BORDER-RIGHT: #181717 1pt solid; WIDTH: 82.8pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"110\" colspan=\"4\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 23.25pt 0pt 0cm\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">4.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">OUTROS Peso: " + peso + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 1cm; BORDER-RIGHT: medium none; WIDTH: 39.2pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" rowspan=\"2\" width=\"52\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 4.1pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">5.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">SEXO</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 4.1pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">" + sexo + "</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 4.1pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Gravidez?" + gravidez + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 1cm; BORDER-RIGHT: #181717 1pt solid; WIDTH: 50.15pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"bottom\" rowspan=\"2\" width=\"67\" colspan=\"3\">&#160;</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 1cm; BORDER-RIGHT: #181717 1pt solid; WIDTH: 92.6pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" rowspan=\"2\" width=\"123\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 3.85pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">6.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">DATA DO EVENTO</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 3.65pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Início: " + dataInicioEvento + "</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Final: " + dataFinalEvento + "</span></p>"
+                + "</td>";
+
+            string html2 = "<td style=\"BORDER-TOP: medium none; HEIGHT: 1cm; BORDER-RIGHT: #181717 1pt solid; WIDTH: 101.7pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" rowspan=\"3\" width=\"136\" colspan=\"5\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 3pt; LINE-HEIGHT: 93%\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 93%\">7.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 93%\">EM CASO DE EVENTO GRAVE, ASSINALAR CONSEQUÊNCIA(S):</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 3pt; LINE-HEIGHT: 93%\" align=\"left\"><span style='FONT-SIZE: 8pt; TEXT-DECORATION: none; FONT-FAMILY: \"Calibri\",sans-serif; VERTICAL-ALIGN: auto; FONT-WEIGHT: 400; COLOR: #181717; FONT-STYLE: normal; LINE-HEIGHT: 93%; BACKGROUND-COLOR: #ffffff'> " + consequencia + "</span></p></td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 14.15pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 14.15pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 82.8pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"110\" colspan=\"4\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Alt.: " + altura + "</span></p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 90.4pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 90.4pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 436.6pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"582\" colspan=\"20\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">8.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">DESCRIÇÃO DO EVENTO (incluindo dados laboratoriais relevantes)</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style='FONT-SIZE: 8pt; TEXT-DECORATION: none; FONT-FAMILY: \"Calibri\",sans-serif; VERTICAL-ALIGN: auto; FONT-WEIGHT: 400; COLOR: #181717; FONT-STYLE: normal; LINE-HEIGHT: 107%; BACKGROUND-COLOR: #ffffff'>" + descricaoEvento + "</span></p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 67.15pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 67.15pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 263.05pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"351\" colspan=\"12\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">9.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">RELAÇÃO CAUSAL ENTRE O USO DO MEDICAMENTO</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 3.95pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">E O APARECIMENTO DO EVENTO ADVERSO (segundo o relator)</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 3.95pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">" + relacaoMedicamento + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 67.15pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 275.25pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"367\" colspan=\"13\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 4.25pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">10.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">EVOLUÇÃO DO PACIENTE</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 4.25pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">" + evolucaoDoPaciente + "</span></p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 14.5pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 14.5pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 538.3pt; BACKGROUND: #bfbfbf; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"718\" colspan=\"25\">"
+                + "<p class=\"MsoNormal\" style=\"TEXT-ALIGN: center; MARGIN: 0cm 0cm 0pt 0.05pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">II. INFORMAÇÕES SOBRE O MEDICAMENTO SUSPEITO</span></b></p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 1cm\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 1cm; BORDER-RIGHT: #181717 1pt solid; WIDTH: 295.3pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"394\" colspan=\"15\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">11.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">NOME DO MEDICAMENTO SUSPEITO</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">" + nomeMedicamentoSuspeito + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 1cm; BORDER-RIGHT: #181717 1pt solid; WIDTH: 63.6pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"85\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">12.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">LOTE</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">" + lote + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 1cm; BORDER-RIGHT: #181717 1pt solid; WIDTH: 179.4pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" rowspan=\"2\" width=\"239\" colspan=\"7\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 44.6pt 0.15pt 0cm; LINE-HEIGHT: 100%\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 100%\">13.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 100%\">O EVENTO ADVERSO CESSOU COM A INTERRUPÇÃO DO MEDICAMENTO?</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 44.6pt 0.15pt 0cm; LINE-HEIGHT: 100%\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 100%\">" + eventoCessouComInterrupcao + "</span></p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 30.25pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 30.25pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 91.15pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"122\" colspan=\"2\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">14.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">VIA DE ADM.</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">" + viaAdministracao + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 30.25pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 159.25pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"212\" colspan=\"8\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">15.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">DOSE DIÁRIA</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">" + doseDiaria + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 30.25pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 108.5pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"145\" colspan=\"8\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">16.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">INDICAÇÃO DE USO</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">" + indicacaoDeUso + "</span></p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 12.85pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 12.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 107.95pt; BORDER-BOTTOM: medium none; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"144\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">17.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">PERÍODO DO TRATAMENTO</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 12.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 250.95pt; BORDER-BOTTOM: medium none; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"335\" colspan=\"15\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">18.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">DURAÇÃO DO TRATAMENTO ATÉ INÍCIO DO EVENTO</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 12.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 179.4pt; BORDER-BOTTOM: medium none; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"239\" colspan=\"7\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">19.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">HOUVE REINTRODUÇÃO DO PRODUTO?</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">" + houveReintroducao + "</span></p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 36.15pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 36.15pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 107.95pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"144\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 9.4pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Início: " + dataInicialTratamento + "</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Final: " + dataFinalTratamento + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 36.15pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 250.95pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"335\" colspan=\"15\">"
+                + "<p class=\"MsoNormal\" align=\"left\">" + duracaoTratamento + "</p>"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 36.15pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 179.4pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"239\" colspan=\"7\">&#160;</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 14.5pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 14.5pt; BORDER-RIGHT: medium none; WIDTH: 473.75pt; BACKGROUND: #bfbfbf; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"632\" colspan=\"23\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 0cm 0pt 151.3pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">III. MEDICAMENTO(S) CONCOMITANTE(S) E HISTÓRICO CLÍNICO</span></b></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 14.5pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 64.55pt; BACKGROUND: #bfbfbf; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"86\" colspan=\"2\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 14.5pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 14.5pt; BORDER-RIGHT: medium none; WIDTH: 473.75pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"632\" colspan=\"23\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 0cm 0pt 1.4pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">20.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">MEDICAMENTO(S) CONCOMITANTE(S) (excluindo os utilizados para tratar o evento adverso)</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 0cm 0pt 1.4pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\"> </span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 14.5pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 64.55pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"86\" colspan=\"2\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "</tr>";
+
+            string html3 = " <tr style=\"height:24.1pt\">"
+                + "<td width=\"226\" colspan=\"6\" style=\"width:169.2pt;border:solid #181717 1.0pt;"
+                + "border-top:none;padding:1.0pt 2.0pt 0cm 0cm;height:24.1pt\">"
+                + "<p class=\"MsoNormal\" style=\"margin-top:0cm;margin-right:0cm;margin-bottom:0cm;"
+                + "margin-left:1.4pt;margin-bottom:.0001pt\"><span style=\"font-size:8.0pt;"
+                + "line-height:107%;color:#181717\">Nome comercial e genérico</span></p>"
+                + "</td>"
+                + "<td width=\"68\" colspan=\"3\" style=\"width:50.75pt;border-top:none;border-left:none;"
+                + "border-bottom:solid #181717 1.0pt;border-right:solid #181717 1.0pt;"
+                + "padding:1.0pt 2.0pt 0cm 0cm;height:24.1pt\">"
+                + "<p class=\"MsoNormal\" style=\"margin-top:0cm;margin-right:0cm;margin-bottom:0cm;"
+                + "margin-left:1.4pt;margin-bottom:.0001pt\"><span style=\"font-size:8.0pt;"
+                + "line-height:107%;color:#181717\">Dose</span></p>"
+                + "</td>"
+                + "<td width=\"68\" colspan=\"4\" style=\"width:50.75pt;border-top:none;border-left:none;"
+                + "border-bottom:solid #181717 1.0pt;border-right:solid #181717 1.0pt;"
+                + "padding:1.0pt 2.0pt 0cm 0cm;height:24.1pt\">"
+                + "<p class=\"MsoNormal\" style=\"margin-top:0cm;margin-right:0cm;margin-bottom:0cm;"
+                + "margin-left:1.4pt;margin-bottom:.0001pt\"><span style=\"font-size:8.0pt;"
+                + "line-height:107%;color:#181717\">Via adm.</span></p>"
+                + "</td>"
+                + "<td width=\"98\" colspan=\"4\" style=\"width:73.3pt;border-top:none;border-left:none;"
+                + "border-bottom:solid #181717 1.0pt;border-right:solid #181717 1.0pt;"
+                + "padding:1.0pt 2.0pt 0cm 0cm;height:24.1pt\">"
+                + "<p class=\"MsoNormal\" style=\"margin-top:0cm;margin-right:0cm;margin-bottom:0cm;"
+                + "margin-left:1.4pt;margin-bottom:.0001pt\"><span style=\"font-size:8.0pt;"
+                + "line-height:107%;color:#181717\">Indicação</span></p>"
+                + "</td>"
+                + "<td width=\"86\" colspan=\"2\" valign=\"top\" style=\"width:64.85pt;border-top:none;"
+                + "border-left:none;border-bottom:solid #181717 1.0pt;border-right:solid #181717 1.0pt;"
+                + "padding:1.0pt 2.0pt 0cm 0cm;height:24.1pt\">"
+                + "<p class=\"MsoNormal\" style=\"margin-top:0cm;margin-right:6.85pt;margin-bottom:"
+                + "0cm;margin-left:1.4pt;margin-bottom:.0001pt\"><span style=\"font-size:8.0pt;"
+                + "line-height:107%;color:#181717\">Data de início do tratamento</span></p>"
+                + "</td>"
+                + "<td width=\"86\" colspan=\"4\" valign=\"top\" style=\"width:64.85pt;border-top:none;"
+                + "border-left:none;border-bottom:solid #181717 1.0pt;border-right:solid #181717 1.0pt;"
+                + "padding:1.0pt 2.0pt 0cm 0cm;height:24.1pt\">"
+                + "<p class=\"MsoNormal\" style=\"margin-top:0cm;margin-right:0cm;margin-bottom:0cm;"
+                + "margin-left:1.4pt;margin-bottom:.0001pt\"><span style=\"font-size:8.0pt;"
+                + "line-height:107%;color:#181717\">Data de término do tratamento</span></p>"
+                + "</td>"
+                + "<td width=\"86\" colspan=\"2\" valign=\"top\" style=\"width:64.55pt;border-top:none;"
+                + "border-left:none;border-bottom:solid #181717 1.0pt;border-right:solid #181717 1.0pt;"
+                + "padding:1.0pt 2.0pt 0cm 0cm;height:24.1pt\">"
+                + "<p class=\"MsoNormal\" style=\"margin-top:0cm;margin-right:0cm;margin-bottom:0cm;"
+                + "margin-left:1.4pt;margin-bottom:.0001pt\"><span style=\"font-size:8.0pt;"
+                + "line-height:107%;color:#181717\">Data da reintrodução</span></p>"
+                + "</td>"
+                + "</tr>"
+                + usoConcomitante;
+
+            string html4 = "<tr style=\"HEIGHT: 23.65pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 23.65pt; BORDER-RIGHT: medium none; WIDTH: 473.75pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"632\" colspan=\"23\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 0cm 0pt 1.4pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">21.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">DADOS CLÍNICOS RELEVANTES (doenças e seus tratamentos, reações a outros medicamentos, gravidez e idade gestacional etc.)</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 0cm 0pt 1.4pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">" + dadosClinicosRelevantes + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 23.65pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 64.55pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"86\" colspan=\"2\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 14.5pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 14.5pt; BORDER-RIGHT: medium none; WIDTH: 179.55pt; BACKGROUND: #bfbfbf; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"239\" colspan=\"8\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 14.5pt; BORDER-RIGHT: medium none; WIDTH: 179.55pt; BACKGROUND: #bfbfbf; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"239\" colspan=\"10\">"
+                + "<p class=\"MsoNormal\" style=\"TEXT-ALIGN: center; MARGIN: 0cm 0cm 0pt 1.25pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">IV. OUTRAS INFORMAÇÕES</span></b></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 14.5pt; BORDER-RIGHT: medium none; WIDTH: 110pt; BACKGROUND: #bfbfbf; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"147\" colspan=\"4\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 14.5pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 69.25pt; BACKGROUND: #bfbfbf; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"92\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 15.6pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 15.6pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 179.55pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" rowspan=\"5\" width=\"239\" colspan=\"8\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 1.65pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">22.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">SAC SUPERA.</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 5.5pt 0pt 0cm\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Av. da Nações Unidas, 22532 - Bl. 1 - Vila Almeida Cep: 04795-000 - São Paulo - SP supera.atende@superafarma.com.br</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 15.6pt; BORDER-RIGHT: medium none; WIDTH: 179.55pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"239\" colspan=\"10\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">25.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">IDENTIFICAÇÃO DO RELATOR</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 15.6pt; BORDER-RIGHT: medium none; WIDTH: 110pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"147\" colspan=\"4\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 15.6pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 69.25pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"92\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 19.85pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: medium none; WIDTH: 179.55pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" width=\"239\" colspan=\"10\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Nome: " + nomeContato + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: medium none; WIDTH: 110pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"147\" colspan=\"4\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 69.25pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"92\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 19.85pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: medium none; WIDTH: 179.55pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" width=\"239\" colspan=\"10\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Inscrição profissional: " + inscricaoProfissional + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: medium none; WIDTH: 110pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"147\" colspan=\"4\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 69.25pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"92\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 19.85pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: medium none; WIDTH: 179.55pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" width=\"239\" colspan=\"10\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Endereço: " + ruaContato + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: medium none; WIDTH: 110pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"147\" colspan=\"4\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 69.25pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"92\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 19.85pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 179.55pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" width=\"239\" colspan=\"10\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Cidade: " + cidadeContato + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: medium none; WIDTH: 110pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" width=\"147\" colspan=\"4\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN: 0cm 0cm 0pt 0.05pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">CEP: " + cepContato + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 19.8pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"26\" colspan=\"2\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 49.45pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" width=\"66\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">UF: " + estadoContato + "</span></p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 19.85pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 179.55pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" rowspan=\"2\" width=\"239\" colspan=\"8\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 9.9pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">23.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">FONTE DO RELATO</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\"> Profissional de saúde: " + profissionalSaude + "</span></p>"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Especialidade: " + especialidade + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 179.55pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" width=\"239\" colspan=\"10\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Tel.: " + telefoneResidencial + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: medium none; WIDTH: 110pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" width=\"147\" colspan=\"4\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">Cel.: " + celularContato + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 69.25pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"92\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>";
+            
+            string html5 = "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 19.85pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: medium none; WIDTH: 179.55pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" width=\"239\" colspan=\"10\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">E-mail: " + emailContato + "</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: medium none; WIDTH: 110pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"147\" colspan=\"4\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 19.85pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 69.25pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"92\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 29pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 29pt; BORDER-RIGHT: medium none; WIDTH: 179.55pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"239\" colspan=\"8\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">24.</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">ASSINATURA E CARIMBO DO RELATOR</span></p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 29pt; BORDER-RIGHT: medium none; WIDTH: 179.55pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"239\" colspan=\"10\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 29pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 110pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"147\" colspan=\"4\">"
+                + "<p class=\"MsoNormal\" align=\"left\">&#160;</p>"
+                + "</td>"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 29pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 69.25pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 1pt; PADDING-LEFT: 0cm; BORDER-LEFT: medium none; PADDING-RIGHT: 2pt\" valign=\"top\" width=\"92\" colspan=\"3\">"
+                + "<p class=\"MsoNormal\" style=\"MARGIN-BOTTOM: 0pt; TEXT-INDENT: 20.85pt\" align=\"left\"><b><span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">DATA</span></b> <span style=\"FONT-SIZE: 8pt; COLOR: #181717; LINE-HEIGHT: 107%\">____/____/____</span></p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"85\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"37\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"22\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"33\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"26\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"23\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"4\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"10\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"54\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"41\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"6\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"11\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"10\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"31\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"2\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"11\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"54\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"20\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"66\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"37\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"3\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"40\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"6\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"20\"></td>"
+                + "<td style=\"BORDER-TOP: medium none; BORDER-RIGHT: medium none; BORDER-BOTTOM: medium none; BORDER-LEFT: medium none\" width=\"66\"></td>"
+                + "</tr>"
+                + "</tbody>"
+                + "</table>"
+                + "</div>"
+                + "<p class=\"MsoNormal\" style=\"TEXT-ALIGN: center; MARGIN: 0cm 0cm 0pt 70.8pt\" align=\"center\"><b><span style=\"FONT-SIZE: 7pt; COLOR: #181717; LINE-HEIGHT: 107%\">POR FAVOR, REMETER ESTE FORMULÁRIO PARA FARMACOVIGILÂNCIA SUPERA VIA CORREIO, E-MAIL OU REPRESENTANTE</span></b></p>"
+                + "<p class=\"MsoNormal\" style='FONT-SIZE: 7pt; TEXT-DECORATION: none; FONT-FAMILY: \"Calibri\",sans-serif; VERTICAL-ALIGN: auto; FONT-WEIGHT: normal; COLOR: #181717; FONT-STYLE: normal; TEXT-ALIGN: center; MARGIN: 0cm 0cm 0pt 70.8pt; BACKGROUND-COLOR: #ffffff' align=\"center\">UTILIZE O VERSO PARA INFORMAÇÕES COMPLEMENTARES</p>"
+                + "<b><span style='FONT-SIZE: 10pt; FONT-FAMILY: \"Calibri\",sans-serif; COLOR: #181717; LINE-HEIGHT: 107%'><br style=\"PAGE-BREAK-BEFORE: always\" clear=\"all\" /></span></b>"
+                + "<p class=\"MsoNormal\">&#160;</p>"
+                + "<p class=\"MsoNormal\" style=\"TEXT-ALIGN: center; MARGIN: 0cm 86.45pt 0pt 73.8pt\" align=\"center\"><b><span style=\"FONT-SIZE: 10pt; COLOR: #181717; LINE-HEIGHT: 107%\">NOTIFICAÇÃO DE SUSPEITA DE EVENTO</span></b></p>"
+                + "<p class=\"MsoNormal\" style=\"TEXT-ALIGN: center; MARGIN: 0cm 86.45pt 0pt 73.8pt\" align=\"center\"><b><span style=\"FONT-SIZE: 10pt; COLOR: #181717; LINE-HEIGHT: 107%\">INFORMAÇÕES COMPLEMENTARES</span></b></p>"
+                + "<div align=\"center\">"
+                + "<table class=\"TableGrid\" style=\"WIDTH: 0cm; BORDER-COLLAPSE: collapse\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\">"
+                + "<tbody>"
+                + "<tr style=\"HEIGHT: 728.75pt\">"
+                + "<td style=\"BORDER-TOP: #181717 1pt solid; HEIGHT: 728.75pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 537.6pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 0cm; PADDING-LEFT: 5.75pt; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 5.75pt\" valign=\"top\" width=\"717\">"
+                + "<p class=\"MsoNormal\">" + informacoesComplementares + "</p>"
+                + "</td>"
+                + "</tr>"
+                + "<tr style=\"HEIGHT: 24.5pt\">"
+                + "<td style=\"BORDER-TOP: medium none; HEIGHT: 24.5pt; BORDER-RIGHT: #181717 1pt solid; WIDTH: 537.6pt; BORDER-BOTTOM: #181717 1pt solid; PADDING-BOTTOM: 0cm; PADDING-TOP: 0cm; PADDING-LEFT: 5.75pt; BORDER-LEFT: #181717 1pt solid; PADDING-RIGHT: 5.75pt\" width=\"717\">"
+                + "<p class=\"MsoNormal\" style=\"TEXT-ALIGN: center; MARGIN: 0cm 0.05pt 0pt 0cm\" align=\"center\"><span style=\"FONT-SIZE: 10pt; COLOR: #181717; LINE-HEIGHT: 107%\">As informações relatadas neste formulário são confidenciais e de uso exclusivo da área de Farmacovigilância Supera.</span></p>"
+                + "</td>"
+                + "</tr>"
+                + "</tbody>"
+                + "</table>"
+                + "</div>"
+                + "<p class=\"MsoNormal\">&#160;</p>"
+                + "</div>"
+                + "</body>"
+                + "</html>";
+
+            gravarArquivoHTML(inc.ID, html1, html2, html3, html4, html5);
+        }
+
+        public static void gravarArquivoHTML(int idIncident, string html1, string html2, string html3, string html4, string html5) {
+            StreamWriter outputFile = new StreamWriter(escolherNomeArquivo(idIncident));
+            outputFile.WriteLine(html1);
+            outputFile.WriteLine(html2);
+            outputFile.WriteLine(html3);
+            outputFile.WriteLine(html4);
+            outputFile.WriteLine(html5);
+            outputFile.Close();
+        }
+
+        static string escolherNomeArquivo(int idIncident) {
+            Stream myStream;
+            SaveFileDialog saveFileDialog1 = new SaveFileDialog();
+            saveFileDialog1.FileName = "Farmacovigilância Ocorrência " + idIncident;
+            saveFileDialog1.Filter = "Arquivo HTML|*.html";
+            saveFileDialog1.FilterIndex = 2;
+            saveFileDialog1.RestoreDirectory = true;
+            try {
+                if(saveFileDialog1.ShowDialog() == DialogResult.OK) {
+                    if((myStream = saveFileDialog1.OpenFile()) != null) {
+                        myStream.Close();
+                        return saveFileDialog1.FileName;
+                    }
+                }
+            }
+            catch(ThreadStateException t) {
+                MessageBox.Show("Erro ao salvar arquivo.");
+                t.Message.ToString();
+            }
+            return null;
+        }
+
+        public string pegarValorCustomFieldPorNome(string nomeCampo) {
+            IIncident inc = (IIncident) RecordContext.GetWorkspaceRecord(RightNow.AddIns.Common.WorkspaceRecordType.Incident);
+
+            List<ICustomAttribute> i = inc.CustomAttributes.ToList();
+
+            foreach(ICustomAttribute icustomAttribute in i) {
+                IGenericField g = icustomAttribute.GenericField;
+                string a = g.Name;
+                if(a.Equals(nomeCampo)) {
+                    return g.DataValue.Value.ToString();
+                }
+            }
+            return "";
+        }
+
+        public string pegarValorCustomFieldPorIDString(int id, IIncident inc) {
+            foreach(ICfVal icfval in inc.CustomField) {
+                if(icfval.CfId == id) {
+                    if(icfval.ValStr != null) {
+                        return icfval.ValStr;
+                    }
+                }
+            }
+            return "";
+        }
+
+        public string pegarValorCustomFieldPorIDStringContato(int id, IContact contato) {
+            foreach(ICfVal icfval in contato.CustomField) {
+                if(icfval.CfId == id) {
+                    if(icfval.ValStr != null) {
+                        return icfval.ValStr;
+                    }
+                }
+            }
+            return "";
+        }
+
+        public string pegarValorCustomFieldPorIDInt(int id, IIncident inc) {
+            foreach(ICfVal icfval in inc.CustomField) {
+                if(icfval.CfId == id) {
+                    if(icfval.ValInt != null) {
+                        return icfval.ValInt.ToString();
+                    }
+                }
+            }
+            return "";
+        }
+
+        public DateTime pegarValorCustomFieldPorIDDate(int id, IIncident inc) {
+            foreach(ICfVal icfval in inc.CustomField) {
+                if(icfval.CfId == id) {
+                    if(icfval.ValDate != null) {
+                        return (DateTime) icfval.ValDate;
+                    }
+                }
+            }
+            return default(DateTime);
+        }
+
+    }
+
+    [AddIn("Workspace Ribbon Button AddIn", Version = "1.0.0.0")]
+    public class WorkspaceRibbonButtonFactory : IWorkspaceRibbonButtonFactory {
+        #region IWorkspaceRibbonButtonFactory Members
+        public IWorkspaceRibbonButton CreateControl(bool inDesignMode, IRecordContext RecordContext) {
+            return new WorkspaceRibbonAddIn(inDesignMode, RecordContext);
+        }
+
+        public System.Drawing.Image Image32 {
+            get {
+                return Properties.Resources._32x32;
+            }
+        }
+        #endregion
+
+        #region IFactoryBase Members
+        public System.Drawing.Image Image16 {
+            get {
+                return Properties.Resources._16x16;
+            }
+        }
+
+        public string Text {
+            get {
+                return "Relatório de Farmacovigilância";
+            }
+        }
+
+        public string Tooltip {
+            get {
+                return "Esta função gera um relatório referente aos dados de Farmacovigilância deste Incidente.";
+            }
+        }
+        #endregion
+
+        #region IAddInBase Members
+        public bool Initialize(IGlobalContext GlobalContext) {
+            return true;
+        }
+        #endregion
+    }
+
+}

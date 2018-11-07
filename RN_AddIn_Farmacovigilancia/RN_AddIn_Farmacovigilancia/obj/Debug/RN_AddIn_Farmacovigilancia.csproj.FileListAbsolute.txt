@@ -1,0 +1,17 @@
+c:\users\nromano\documents\visual studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\bin\Debug\RN_AddIn_Farmacovigilancia.dll
+c:\users\nromano\documents\visual studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\bin\Debug\RN_AddIn_Farmacovigilancia.pdb
+c:\users\nromano\documents\visual studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\obj\Debug\RN_AddIn_Farmacovigilancia.csprojResolveAssemblyReference.cache
+c:\users\nromano\documents\visual studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\obj\Debug\RN_AddIn_Farmacovigilancia.Properties.Resources.resources
+c:\users\nromano\documents\visual studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\obj\Debug\RN_AddIn_Farmacovigilancia.csproj.GenerateResource.Cache
+c:\users\nromano\documents\visual studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\obj\Debug\RN_AddIn_Farmacovigilancia.dll
+c:\users\nromano\documents\visual studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\obj\Debug\RN_AddIn_Farmacovigilancia.pdb
+C:\Users\nromano\Documents\Visual Studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\bin\Debug\TesteHttpRequest.dll
+C:\Users\nromano\Documents\Visual Studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\bin\Debug\TesteHttpRequest.pdb
+D:\dev\Visual Studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\bin\Debug\RN_AddIn_Farmacovigilancia.dll
+D:\dev\Visual Studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\bin\Debug\RN_AddIn_Farmacovigilancia.pdb
+D:\dev\Visual Studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\bin\Debug\TesteHttpRequest.pdb
+D:\dev\Visual Studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\obj\Debug\RN_AddIn_Farmacovigilancia.csprojResolveAssemblyReference.cache
+D:\dev\Visual Studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\obj\Debug\RN_AddIn_Farmacovigilancia.Properties.Resources.resources
+D:\dev\Visual Studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\obj\Debug\RN_AddIn_Farmacovigilancia.csproj.GenerateResource.Cache
+D:\dev\Visual Studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\obj\Debug\RN_AddIn_Farmacovigilancia.dll
+D:\dev\Visual Studio 2015\Projects\RN_AddIn_Farmacovigilancia\RN_AddIn_Farmacovigilancia\obj\Debug\RN_AddIn_Farmacovigilancia.pdb

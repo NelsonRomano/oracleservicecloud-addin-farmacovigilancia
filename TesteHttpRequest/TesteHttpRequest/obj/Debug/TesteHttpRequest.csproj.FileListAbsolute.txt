@@ -1,0 +1,6 @@
+c:\users\nromano\documents\visual studio 2015\Projects\TesteHttpRequest\TesteHttpRequest\bin\Debug\TesteHttpRequest.pdb
+c:\users\nromano\documents\visual studio 2015\Projects\TesteHttpRequest\TesteHttpRequest\obj\Debug\TesteHttpRequest.csprojResolveAssemblyReference.cache
+c:\users\nromano\documents\visual studio 2015\Projects\TesteHttpRequest\TesteHttpRequest\obj\Debug\TesteHttpRequest.pdb
+c:\users\nromano\documents\visual studio 2015\Projects\TesteHttpRequest\TesteHttpRequest\bin\Debug\TesteHttpRequest.dll.config
+c:\users\nromano\documents\visual studio 2015\Projects\TesteHttpRequest\TesteHttpRequest\bin\Debug\TesteHttpRequest.dll
+c:\users\nromano\documents\visual studio 2015\Projects\TesteHttpRequest\TesteHttpRequest\obj\Debug\TesteHttpRequest.dll
